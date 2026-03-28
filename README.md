@@ -3,7 +3,7 @@
 
 > **Domain:** `corp.corpnet.com` &nbsp;|&nbsp; **DC:** `CORP-DC-01` @ `10.0.0.10` &nbsp;|&nbsp; **Client:** `DESKTOP-F8CRF32` @ `10.0.0.20` &nbsp;|&nbsp; **NOC:** Zabbix @ `10.0.0.24`
 >
-> 📎 *Phase 1 — Zabbix base setup on Ubuntu 24.04: [View Zabbix Repo](#)*
+> 📎 *Phase 1 — Zabbix base setup on Ubuntu 24.04: [https://github.com/Nafil14/Zabbix-Monitoring-Lab-Deployment-Configuration](#)*
 
 ---
 
@@ -32,7 +32,7 @@ This isn't a tutorial follow-along. Every problem here was real. Every fix was e
 │  │  ● DNS Server       │  GPOs ──►│  ● GPOs applying         │  │
 │  │  ● GPMC             │          │  ● H:\ drive mapped      │  │
 │  │  ● SMB Shares       │  SMB  ──►│  ● CMD blocked           │  │
-│  │  ● Zabbix Agent 2   │          │  ● Control Panel blocked │  │
+│  │  ● Zabbix Agent     │          │  ● Control Panel blocked │  │
 │  └─────────────────────┘          └──────────────────────────┘  │
 │            │                                                     │
 │            │ TCP 10050                                           │
@@ -342,7 +342,7 @@ Using **Group Policy Preferences → Drive Maps**, I configured:
 
 ## 🔗 Related
 
-- 📡 [Phase 1 — Zabbix Monitoring Lab](#) — Ubuntu 24.04 + LAMP + Zabbix 7.0 LTS
+- 📡 [https://github.com/Nafil14/Zabbix-Monitoring-Lab-Deployment-Configuration](#) — Ubuntu 24.04 + LAMP + Zabbix 7.0 LTS
 - 🔒 Coming next: Security hardening GPOs + Zabbix alerting
 
 ---
