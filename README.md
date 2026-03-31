@@ -1,17 +1,17 @@
-# 🏢 Active Directory, Group Policy & Enterprise Monitoring
-## Hybrid Enterprise IT Lab — Phase 2
+# 🏢 Active Directory, Group Policy & Zabbix Monitoring
+## Hybrid Enterprise IT Lab — Full Documentation
 
 > **Domain:** `corp.corpnet.com` &nbsp;|&nbsp; **DC:** `CORP-DC-01` @ `10.0.0.10` &nbsp;|&nbsp; **Client:** `DESKTOP-F8CRF32` @ `10.0.0.20` &nbsp;|&nbsp; **NOC:** Zabbix @ `10.0.0.24`
 >
-> 📎 *Phase 1 — Zabbix base setup on Ubuntu 24.04: [https://github.com/Nafil14/Zabbix-Monitoring-Lab-Deployment-Configuration](#)*
+> 📎 *Phase 1 — Zabbix base setup on Ubuntu 24.04: [View Zabbix Repo](#)*
 
 ---
 
 ## 🧠 The Story
 
-After getting Zabbix up and monitoring my Ubuntu server, I asked myself the question every enterprise sysadmin deals with daily: *how do you actually manage Windows machines at scale?*
+After getting Zabbix up and monitoring my Ubuntu server, I asked myself the question every enterprise sysadmin deals with daily: *how do you actually manage and monitor Windows machines at scale?*
 
-The answer is **Active Directory + Group Policy** — the backbone of Windows enterprise management in organisations worldwide. Instead of just reading about it, I built the whole thing from scratch: a domain controller, a joined Windows 10 client, multiple GPOs doing real work, and a security delegation model for IT staff.
+The answer is **Active Directory + Group Policy + Zabbix** — the backbone of enterprise IT in organisations worldwide. Instead of just reading about it, I built the whole thing from scratch: a domain controller, a joined Windows 10 client, multiple GPOs doing real work, a security delegation model, and a full Zabbix monitoring layer watching everything in real time.
 
 This isn't a tutorial follow-along. Every problem here was real. Every fix was earned.
 
@@ -23,25 +23,28 @@ This isn't a tutorial follow-along. Every problem here was real. Every fix was e
 ┌─────────────────────────────────────────────────────────────────┐
 │                   VirtualBox — 10.0.0.0/24                      │
 │                                                                 │
-│  ┌─────────────────────┐          ┌──────────────────────────┐  │
-│  │  CORP-DC-01         │          │  DESKTOP-F8CRF32         │  │
-│  │  Windows Server 2022│◄─────────│  Windows 10 (22H2)       │  │
-│  │  10.0.0.10          │  Domain  │  10.0.0.20               │  │
-│  │                     │  Member  │                          │  │
-│  │  ● Active Directory │          │  ● corp.corpnet.com ✅    │  │
-│  │  ● DNS Server       │  GPOs ──►│  ● GPOs applying         │  │
-│  │  ● GPMC             │          │  ● H:\ drive mapped      │  │
-│  │  ● SMB Shares       │  SMB  ──►│  ● CMD blocked           │  │
-│  │  ● Zabbix Agent     │          │  ● Control Panel blocked │  │
-│  └─────────────────────┘          └──────────────────────────┘  │
-│            │                                                     │
-│            │ TCP 10050                                           │
-│            ▼                                                     │
-│  ┌─────────────────────┐                                        │
-│  │  Ubuntu 24.04 NOC   │                                        │
-│  │  Zabbix 7.0 LTS     │                                        │
-│  │  10.0.0.24          │                                        │
-│  └─────────────────────┘                                        │
+│  ┌──────────────────────┐      ┌──────────────────────────┐    │
+│  │  CORP-DC-01          │      │  DESKTOP-F8CRF32         │    │
+│  │  Windows Server 2022 │◄─────│  Windows 10 Build        │    │
+│  │  10.0.0.10           │Domain│  19045.2965              │    │
+│  │                      │ Join │  10.0.0.20               │    │
+│  │  ● Active Directory  │      │                          │    │
+│  │  ● DNS Server        │ GPO ►│  ● corp.corpnet.com ✅   │    │
+│  │  ● GPMC              │      │  ● Wallpaper GPO         │    │
+│  │  ● SMB Shares        │ SMB ►│  ● H:\ drive mapped      │    │
+│  │  ● Zabbix Agent 2    │      │  ● CMD blocked           │    │
+│  └──────────────────────┘      │  ● Control Panel blocked │    │
+│            │                   └──────────────────────────┘    │
+│            │ TCP 10050                                          │
+│            ▼                                                    │
+│  ┌──────────────────────┐                                       │
+│  │  Ubuntu 24.04 NOC    │                                       │
+│  │  Zabbix 7.0.23 LTS   │                                       │
+│  │  10.0.0.24           │                                       │
+│  │  ● 2 hosts monitored │                                       │
+│  │  ● 249 active items  │                                       │
+│  │  ● 3.47 values/sec   │                                       │
+│  └──────────────────────┘                                       │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -56,294 +59,265 @@ This isn't a tutorial follow-along. Every problem here was real. Every fix was e
 | Client Machine | `DESKTOP-F8CRF32` (Windows 10 Build 19045.2965) |
 | AD Security Group | `GS-IT-Staff` — delegated user management rights |
 | GPO 1 | `company Wallpaper` — desktop wallpaper via UNC path |
-| GPO 2 | `security_lockdown_policy` — CMD + Control Panel blocked |
-| GPO 3 | `Mapped_drive_policy` — `H:` drive → `\\10.0.0.10\CompanyData` |
-| SMB Share | `CompanyData` shared from DC, accessed by domain users |
-| Monitoring | Zabbix Agent 2 on DC, reporting to Ubuntu NOC |
+| GPO 2 | `security_lockdown_policy` — CMD + Control Panel blocked for `hruser1` |
+| GPO 3 | `Mapped_drive_policy` — `H:` → `\\10.0.0.10\CompanyData` |
+| SMB Share | `CompanyData` hosted on DC, accessed by domain users |
+| Zabbix | 7.0.23 LTS — 2 hosts, 249 items, 3.47 values/sec |
 
 ---
 
-## 📖 Phase-by-Phase Walkthrough
+## 📖 Phase 1 — Active Directory & Delegation of Control
 
-### 🔷 Phase 1 — Active Directory & Delegation of Control
+In any real org, you don't give every IT person Domain Admin — that's a security disaster. Instead, you delegate specific permissions to specific groups using the **Delegation of Control Wizard**.
 
-The first real enterprise task beyond just "install AD" is deciding *who gets to manage what*. In any real org, you don't give every IT person Domain Admin rights — that's a security nightmare. Instead, you delegate specific permissions to specific groups.
-
-I created the `GS-IT-Staff` security group and used the **Delegation of Control Wizard** to grant them exactly what they need — no more, no less.
-
-**Delegated permissions for `GS-IT-Staff`:**
+I created `GS-IT-Staff` and gave them exactly what helpdesk needs:
 - ✅ Create, delete, and manage user accounts
-- ✅ Reset user passwords and force password change at next logon
-- ❌ Everything else (manage groups, GPO links, etc.) — not their job
+- ✅ Reset passwords and force change at next logon
+- ❌ GPO management, group creation — not their job
 
-This mirrors how real enterprise IT departments operate: helpdesk can reset passwords, but they can't touch Group Policy.
-
----
-
-**Screenshot: Selecting the `GS-IT-Staff` group in the Delegation Wizard**
+**Selecting `GS-IT-Staff` in the Delegation Wizard**
 
 ![AD Delegation Wizard](screenshots/ad-delegation-wizard.png)
 
----
-
-**Screenshot: Delegating only the necessary tasks — principle of least privilege in action**
+**Delegating only necessary tasks — principle of least privilege in practice**
 
 ![AD Delegation Tasks](screenshots/ad-delegation-tasks.png)
 
 ---
 
-### 🔷 Phase 2 — Joining the Windows 10 Client to the Domain
+## 📖 Phase 2 — Joining Windows 10 to the Domain
 
-With AD running on `CORP-DC-01`, it was time to bring in the client machine. The process seems simple but has a gotcha that trips up a lot of people: **the client's DNS must point to the DC before the domain join will work.** Windows needs to resolve `corp.corpnet.com` via the DC's DNS — not a public DNS server.
+Critical gotcha: **client DNS must point to the DC** (`10.0.0.10`) before anything works.
 
-Once DNS was sorted, the join went through the classic four-step flow:
-
-**Step 1 — Enter the domain name**
+**Step 1 — Enter domain name**
 
 ![Domain Join Dialog](screenshots/domain-join-dialog.png)
 
-> `DESKTOP-F8CRF32` joining `corp.corpnet.com` via System Properties
-
----
-
-**Step 2 — Authenticate with domain admin credentials**
+**Step 2 — Authenticate**
 
 ![Domain Join Credentials](screenshots/domain-join-credentials.png)
 
-> `CORPNET\ADMINISTRATOR` credentials used to authorize the join
-
----
-
-**Step 3 — Success confirmation**
+**Step 3 — Success**
 
 ![Domain Join Success](screenshots/domain-join-success.png)
 
-> *"Welcome to the corp.corpnet.com domain"* — the most satisfying dialog in Windows administration
-
----
-
-**Step 4 — Reboot to apply**
+**Step 4 — Reboot**
 
 ![Domain Join Restart](screenshots/domain-join-restart.png)
 
-> Domain membership requires a reboot to take effect
-
----
-
-**Post-reboot verification — `ipconfig`**
+**Verification — `ipconfig` showing `admin1.CORP` session, IP `10.0.0.20`**
 
 ![Client ipconfig](screenshots/client-ipconfig.png)
 
-> Logged in as `admin1.CORP` — a domain account. IP: `10.0.0.20`, Gateway: `10.0.0.1`
-
----
-
-**Post-reboot verification — `systeminfo`**
+**Verification — `systeminfo` confirming `Domain: corp.corpnet.com` | `Logon Server: \\CORP-DC-01`**
 
 ![Client systeminfo](screenshots/client-systeminfo.png)
 
-> `Domain: corp.corpnet.com` ✅ | `Logon Server: \\CORP-DC-01` ✅ — the client is fully domain-joined and authenticating against the DC
-
 ---
 
-### 🔷 Phase 3 — GPO 1: Corporate Desktop Wallpaper
+## 📖 Phase 3 — GPO 1: Corporate Desktop Wallpaper
 
-The classic enterprise GPO task. The goal: push a corporate wallpaper to all domain users automatically, without touching each machine individually.
+Wallpaper pushed via UNC path: `\\10.0.0.10\CompanyData\Wallpaper` | Style: **Fill**
 
-**Configuration on the DC:**
-
-The wallpaper GPO points to a UNC path on the SMB share hosted on the DC:
-
-```
-\\10.0.0.10\CompanyData\Wallpaper
-```
-
-Style set to **Fill** so it scales properly on any screen resolution.
-
----
-
-**Screenshot: Wallpaper GPO — first configured (empty path)**
+**GPO editor — wallpaper policy being configured**
 
 ![GPO Wallpaper Empty](screenshots/gpo-wallpaper-empty.png)
 
----
-
-**Screenshot: Wallpaper GPO — UNC path and Fill style configured**
+**GPO editor — UNC path and Fill style set**
 
 ![GPO Wallpaper Path](screenshots/gpo-wallpaper-path.png)
 
----
-
-**Setting up the SMB Share — the permission trap**
-
-To serve the wallpaper file over the network, the `CompanyData` share needed correct permissions at *two* layers. This is where most people get stuck.
+**SMB share permissions — both Share + NTFS must be set**
 
 ![SMB Share Permissions](screenshots/smb-share-permissions.png)
 
-> Granting `GS-IT-Staff` access to the share — both **Share Permissions** and **NTFS Permissions** must be set. One without the other = Access Denied.
-
----
-
-**The result on the client — a teachable moment**
+**Client result — GPO applied, image not found (white rectangle)**
 
 ![GPO Wallpaper White Rectangle](screenshots/gpo-wallpaper-white-rect.png)
 
-> The GPO *applied* — the white rectangle proves Windows received the policy and attempted to render the wallpaper. However, the image file wasn't found at the UNC path at render time (file missing from share folder). This is actually a useful troubleshooting exhibit: **the policy reached the client, but the file delivery failed separately.** Two different problems, two different fixes.
+> White rectangle = policy reached client ✅ | Image file missing from share ❌ — two separate problems. Real troubleshooting exhibit.
 
 ---
 
-### 🔷 Phase 4 — GPO 2: Security Lockdown Policy
+## 📖 Phase 4 — GPO 2: Security Lockdown Policy
 
-This is where things get interesting from a real enterprise perspective. The `security_lockdown_policy` GPO demonstrates **user-targeted security restrictions** — policies that apply to a specific user (`hruser1`) rather than all domain users.
+Targeted at `hruser1@corp.corpnet.com` via Security Filtering. Other users unaffected.
 
-**Policies configured inside `security_lockdown_policy`:**
+| Policy | Setting |
+|--------|---------|
+| Prohibit access to Control Panel | Enabled |
+| Prevent access to command prompt | Enabled |
 
-| Policy | Setting | Effect |
-|--------|---------|--------|
-| Prohibit access to Control Panel and PC Settings | Enabled | Removes Control Panel from Start menu and File Explorer |
-| Prevent access to the command prompt | Enabled | Blocks `cmd.exe`; batch files still allowed |
-
----
-
-**Screenshot: Control Panel restriction — before enabling**
+**Control Panel restriction — before**
 
 ![GPO Control Panel Before](screenshots/gpo-controlpanel-before.png)
 
----
-
-**Screenshot: Control Panel restriction — enabled**
+**Control Panel restriction — enabled**
 
 ![GPO Control Panel Enabled](screenshots/gpo-controlpanel-enabled.png)
 
----
-
-**Screenshot: CMD restriction — enabled, scoped to `hruser1`**
+**CMD restriction — enabled**
 
 ![GPO CMD Block Enabled](screenshots/gpo-cmd-block-enabled.png)
 
----
-
-**Screenshot: GPMC — `security_lockdown_policy` scoped to `hruser1@corp.corpnet.com`**
+**GPMC — policy scoped to `hruser1` only**
 
 ![GPO Lockdown Scope](screenshots/gpo-lockdown-scope.png)
 
-> Security Filtering set to `hruser1` only — this is **targeted GPO application**, not a blanket domain policy. Other users are unaffected.
-
----
-
-**Screenshot: Full policy summary — Settings tab**
+**Full policy settings summary**
 
 ![GPO Lockdown Summary](screenshots/gpo-lockdown-summary.png)
 
-> Complete view of `security_lockdown_policy`: Control Panel blocked + CMD blocked, both under User Configuration → Administrative Templates
+**Client proof — CMD blocked**
 
----
+![GPO CMD Disabled](screenshots/gpo-cmd-disabled.png)
 
-**Proof the policies applied on the client:**
-
-CMD blocked by policy:
-
-![GPO CMD Disabled on Client](screenshots/gpo-cmd-disabled.png)
-
-> *"The command prompt has been disabled by your administrator"*
-
-Control Panel blocked:
+**Client proof — Control Panel blocked**
 
 ![GPO Restrictions Error](screenshots/gpo-restrictions-error.png)
 
-> *"This operation has been cancelled due to restrictions in effect on this computer. Please contact your system administrator."*
-
 ---
 
-### 🔷 Phase 5 — GPO 3: Mapped Network Drive
+## 📖 Phase 5 — GPO 3: Mapped Network Drive
 
-The third GPO automates something IT departments do constantly: mapping a shared network drive for users on login.
+`Mapped_drive_policy` — maps `H:` → `\\10.0.0.10\CompanyData` automatically on login.
 
-Using **Group Policy Preferences → Drive Maps**, I configured:
-
-| Setting | Value |
-|---------|-------|
-| Action | Create |
-| Drive Letter | `H:` |
-| Path | `\\10.0.0.10\CompanyData` |
-
----
-
-**Screenshot: Drive Maps policy in Group Policy Management Editor**
+**Drive Maps in Group Policy Management Editor**
 
 ![GPO Drive Map Policy](screenshots/gpo-drive-map-policy.png)
 
-> `Mapped_drive_policy` — maps `H:` to `\\10.0.0.10\CompanyData` automatically for domain users
+**Client — drive visible in File Explorer**
 
----
-
-**Proof on the client — drive appearing in File Explorer:**
-
-![SMB Share Mapped S Drive](screenshots/smb-share-mapped.png)
-
-> `CompanyData (\\10.0.0.10) (S:)` visible in Network Locations — 3.87 GB free of 32.3 GB
+![SMB Share Mapped](screenshots/smb-share-mapped.png)
 
 ![SMB Drive Mapped H](screenshots/smb-drive-mapped-h.png)
 
-> `CompanyData (\\10.0.0.10) (H:)` — the GPO-mapped drive letter, automatically connected on login
+---
+
+## 📖 Phase 6 — Zabbix Monitoring: DC1 Live Data
+
+Zabbix Agent 2 installed on DC1, TCP 10050 opened in Windows Firewall, host added to Zabbix. Both hosts turned green immediately.
+
+### 🖥️ Global Dashboard — 2 Hosts Available
+
+![Zabbix Global Dashboard](screenshots/zabbix-global-dashboard.png)
+
+> **2 hosts 🟢** | Zabbix 7.0.23 | 249 items | 3.47 values/sec | 2 active warnings on DC1
+
+---
+
+### 📋 DC1 Full Metrics List
+
+![Zabbix DC1 Items List](screenshots/zabbix-dc1-items-list.png)
+
+> All metrics updating every 7–30 seconds — CPU, disk, memory, filesystem, network
+
+---
+
+### 📊 CPU Utilization — Live Graph
+
+![Zabbix CPU Utilization Graph](screenshots/zabbix-cpu-utilization-graph.png)
+
+> **avg 3.4784% | max 5.2941%** — healthy Domain Controller workload
+
+---
+
+### 📊 CPU User Time
+
+![Zabbix CPU User Time Graph](screenshots/zabbix-cpu-user-time-graph.png)
+
+> User-space CPU: avg 0.3126%, max 1.0133%
+
+---
+
+### 💾 Disk I/O — Read/Write Queue
+
+![Zabbix Disk Read Write Queue](screenshots/zabbix-disk-readwrite-queue.png)
+
+---
+
+### 💾 Disk Waiting Times & Rates
+
+![Zabbix Disk Waiting Read Write Rates](screenshots/zabbix-disk-waiting-readwrite-rates.png)
+
+> Write request avg wait: **1.76ms avg, 2.61ms max**
+
+---
+
+### 💾 Disk Write Rate
+
+![Zabbix Disk Write Rate Waiting](screenshots/zabbix-disk-write-rate-waiting.png)
+
+> **2.2936 w/s avg, 3.6176 w/s max**
+
+---
+
+### 💾 Disk Utilization
+
+![Zabbix Disk Utilization Queue](screenshots/zabbix-disk-utilization-queue.png)
+
+> Idle time utilization: 0.8456% avg — disk mostly idle ✅
+
+---
+
+### 🔴 Disk Space Alert — Real Monitoring Catching a Real Problem
+
+![Zabbix Disk Space Alert](screenshots/zabbix-disk-space-alert.png)
+
+> **C: drive at 88.4% used** (28.59 GB of 32.34 GB) — Zabbix threshold breached at 80%, warning fired automatically. This is exactly what enterprise monitoring exists for.
+
+---
+
+### 🌐 Network Traffic
+
+![Zabbix Network Traffic](screenshots/zabbix-network-traffic.png)
+
+> **41.29 Kbps received avg** | 6.35 Kbps sent | Zero packet errors | Interface UP ✅
+
+---
+
+### 🧠 Memory & System Activity
+
+![Zabbix Cache Context Switches](screenshots/zabbix-cache-context-switches.png)
+
+> Cache bytes: **82.67 MB avg** | Context switches: 150–250/sec — normal DC workload
 
 ---
 
 ## 🔧 Troubleshooting Log
 
-### 1. 🔴 Domain Join Fails — DNS Not Resolving
-**Symptom:** "The domain could not be found" when trying to join  
-**Root Cause:** Client DNS was pointing to a public server (e.g. 8.8.8.8), not the DC  
-**Fix:** Set client DNS to `10.0.0.10` (DC IP) before attempting domain join  
-**Lesson:** Active Directory domain resolution depends entirely on DC-hosted DNS
-
----
-
-### 2. 🔴 Wallpaper GPO Applies But Image Not Showing
-**Symptom:** White rectangle renders on desktop — GPO reached client but wallpaper is blank  
-**Root Cause:** Wallpaper image file was missing from `\\10.0.0.10\CompanyData\Wallpaper`  
-**Diagnosis:** The white rectangle proves the policy applied — the *file delivery* is the separate failure  
-**Fix:** Place a valid `.jpg` or `.bmp` file at the exact UNC path specified in the GPO  
-**Lesson:** Always verify the share path contains the actual file, not just that the path is correctly typed
-
----
-
-### 3. 🔴 SMB Share Access Denied for Domain Users
-**Symptom:** Users can't access `\\10.0.0.10\CompanyData` — permission errors  
-**Root Cause:** Only **Share Permissions** were set; **NTFS Permissions** were missing  
-**Fix:** Set Read access for `Authenticated Users` (or the specific group) at *both* layers:  
-- Share Permissions tab → Read  
-- Security tab (NTFS) → Read & Execute  
-**Lesson:** Windows network shares have two independent permission layers. Both must allow access.
-
----
-
-### 4. 🔴 GPO Not Applying to Client
-**Symptom:** Policy configured on DC but not taking effect on client  
-**Fix:** Run `gpupdate /force` on client, then verify with `gpresult /r`  
-**Lesson:** Group Policy has a refresh interval — force it during testing to avoid confusion
+| # | Problem | Cause | Fix |
+|---|---------|-------|-----|
+| 1 | Domain join fails | Client DNS not pointing to DC | Set DNS to `10.0.0.10` first |
+| 2 | Wallpaper shows white rectangle | Image file missing from SMB share | Place valid file at exact UNC path |
+| 3 | SMB Access Denied | NTFS permissions not set | Add Read for Authenticated Users at Share + NTFS level |
+| 4 | GPO not applying | Policy refresh interval | Run `gpupdate /force` + `gpresult /r` |
+| 5 | Zabbix host red/unavailable | TCP 10050 blocked by Windows Firewall | Create custom inbound firewall rule |
+| 6 | NTP sync warning — GUI greyed out | Org policy locked time settings | Used `w32tm` + PowerShell to force sync |
+| 7 | Disk space alert on DC1 | C: drive at 88.4% — threshold >80% | Active alert — clean up disk or expand VHD |
 
 ---
 
 ## 💼 Skills Demonstrated
 
-- Active Directory Domain Services (AD DS) setup and management
-- DNS configuration integrated with AD
-- Delegation of Control — principle of least privilege in practice
-- Group Policy Object (GPO) creation, linking, and scoping
-- Security Filtering — targeting GPOs to specific users
-- SMB file share setup with dual-layer permission model (Share + NTFS)
+- Active Directory setup, domain promotion, DNS integration
+- Delegation of Control — least privilege administration
+- GPO creation, linking, scoping, Security Filtering
+- SMB file share with dual-layer permission model
 - Group Policy Preferences — Drive Maps automation
-- Windows client domain-join process end-to-end
-- Systematic troubleshooting of GPO and permission issues
-- Cross-platform monitoring via Zabbix Agent 2
+- Windows 10 domain-join process end-to-end
+- Zabbix Agent 2 deployment on Windows
+- Windows Firewall custom inbound rule management
+- NTP synchronization via PowerShell
+- Real-time monitoring: CPU, disk, memory, network
+- Alert threshold management and incident diagnosis
 
 ---
 
-## 🔗 Related
+## 🔗 Related Projects
 
-- 📡 [https://github.com/Nafil14/Zabbix-Monitoring-Lab-Deployment-Configuration](#) — Ubuntu 24.04 + LAMP + Zabbix 7.0 LTS
-- 🔒 Coming next: Security hardening GPOs + Zabbix alerting
+- 📡 [Phase 1 — Zabbix Monitoring Lab](#) — Ubuntu 24.04 + LAMP + Zabbix 7.0 LTS
+- 🔒 Coming next: Ansible automation + security hardening GPOs
 
 ---
 
