@@ -3,7 +3,7 @@
 
 > **Domain:** `corp.corpnet.com` &nbsp;|&nbsp; **DC:** `CORP-DC-01` @ `10.0.0.10` &nbsp;|&nbsp; **Client:** `DESKTOP-F8CRF32` @ `10.0.0.20` &nbsp;|&nbsp; **NOC:** Zabbix @ `10.0.0.24`
 >
-> 📎 *Phase 1 — Zabbix base setup on Ubuntu 24.04: [View Zabbix Repo](#)*
+> 📎 *Phase 1 — Zabbix base setup on Ubuntu 24.04: [https://github.com/Nafil14/Zabbix-Monitoring-Lab-Deployment-Configuration](#)*
 
 ---
 
